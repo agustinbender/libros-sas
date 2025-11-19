@@ -32,46 +32,32 @@ Se identificaron gaps entre los requerimientos funcionales y la documentación t
 
 ### GAP-002: Estrategia de almacenamiento de PDFs
 
-**Impacto:** Alto
-**Requerimientos afectados:** FR-05, FR-20, FR-22, FR-23, FR-24
+**Estado:** ✅ RESUELTO
 
-**Descripción:**
-Se cargarán potencialmente cientos de PDFs por sociedad, pero no se definió:
-- Dónde almacenar (filesystem local, S3, otro)
-- Estructura de directorios
-- Límites de almacenamiento
-- Backup de archivos
-- Retención de archivos borrados
+**Decisión tomada:**
+- **Almacenamiento:** Volumen local persistente `/data/files/`
+- **Estructura:** `/data/files/{sociedad_id}/{libro_id}/{acto_id}/`
+- **Migración futura:** S3/MinIO cuando se necesite escalar
+- **Límites:** 50MB por archivo, 100 archivos por batch
 
-**Decisiones requeridas:**
-1. ¿Usar S3/MinIO o volumen persistente local?
-2. ¿Cuánto almacenamiento asignar por sociedad?
-3. ¿Cómo manejar archivos de sociedades borradas?
-
-**Recomendación:**
-Para MVP con SQLite, usar volumen persistente local (`/data/files/`). Migrar a S3 cuando escale.
+**Documentado en:** CLAUDE.MD - Sección "File Storage Strategy"
 
 ---
 
 ### GAP-003: Procesamiento asíncrono de PDFs
 
-**Impacto:** Alto
-**Requerimientos afectados:** FR-05, FR-06, FR-07, FR-08
+**Estado:** 🟡 PENDIENTE DECISIÓN
 
-**Descripción:**
-La carga masiva de PDFs requiere procesamiento asíncrono (clasificación, extracción de IA), pero no hay:
-- Sistema de colas definido
-- Workers de procesamiento
-- Estrategia de reintentos
-- Notificación de progreso al usuario
+**Opciones evaluadas:**
 
-**Decisiones requeridas:**
-1. ¿Usar Bull/BullMQ, Agenda, o implementación custom?
-2. ¿Cuántos workers paralelos?
-3. ¿Websockets o polling para progreso?
+| Opción | Pros | Contras |
+|--------|------|---------|
+| **BullMQ + Redis** | Maduro, dashboard UI, reintentos, prioridades | Requiere Redis (más infra/costo) |
+| **Custom con SQLite** | Sin dependencias extra, simple para MVP | Hay que implementar, sin dashboard |
 
-**Recomendación:**
-Usar BullMQ con Redis para colas. Websockets para progreso en tiempo real.
+**Recomendación:** Para MVP usar custom con SQLite (tabla `job_queue`). Migrar a BullMQ cuando escale.
+
+**Decisión requerida:** ¿Custom SQLite para MVP o BullMQ desde el inicio?
 
 ---
 
@@ -125,65 +111,75 @@ Usar `pdf-lib` para manipulación de PDFs existentes y React-PDF o Puppeteer par
 
 ### GAP-005: Modelo de Contexto y versionado
 
-**Impacto:** Medio
-**Requerimientos afectados:** FR-10, FR-11, FR-32
+**Estado:** 🟡 PENDIENTE DECISIÓN
 
-**Descripción:**
-El Contexto es un documento vivo con versionado, pero no se definió:
-- Formato del contenido (Markdown, HTML, JSON estructurado)
-- Cómo calcular y mostrar diffs entre versiones
-- Cómo la IA propone cambios (patch, texto completo)
+**Opciones evaluadas:**
 
-**Decisiones requeridas:**
-1. ¿Formato del Contexto?
-2. ¿Cómo mostrar comparación de versiones?
-3. ¿Cómo estructurar propuestas de cambio de IA?
+| Opción | Pros | Contras |
+|--------|------|---------|
+| **Markdown** | Familiar, fácil renderizar, IA lo genera bien, versionable | Menos control estructura |
+| **JSON estructurado** | Validación schema, consultas granulares | Necesita UI custom, menos flexible |
 
-**Recomendación:**
-Usar Markdown para el Contexto. Guardar versiones completas. Mostrar diff con librería como `diff`.
+**Recomendación:** Markdown - Balance entre flexibilidad y estructura. Usar `diff` o `jsdiff` para comparar versiones.
+
+**Decisión requerida:** ¿Markdown o JSON estructurado?
 
 ---
 
 ### GAP-006: Extracción de hash del comprobante TAD
 
-**Impacto:** Medio
-**Requerimientos afectados:** FR-22
+**Estado:** ✅ RESUELTO
 
-**Descripción:**
-Se debe extraer el hash del comprobante TAD para validarlo, pero:
-- No se conoce el formato exacto del comprobante TAD
-- No se sabe si es PDF, imagen, u otro
-- No se sabe dónde aparece el hash en el comprobante
+**Análisis del comprobante real (IF-2023-05069991-APN-DA#IGJ):**
 
-**Decisiones requeridas:**
-1. ¿Formato del comprobante TAD?
-2. ¿Usar OCR o el hash está en texto seleccionable?
-3. ¿Qué hacer si no se puede extraer automáticamente?
+El comprobante TAD es un PDF generado por la IGJ con:
+- **Formato:** PDF con texto seleccionable (NO requiere OCR)
+- **Hash:** En línea `Hash: a53ab3dade11bd9036938f1ba67158210e723f9027759ee639e2d853fb022545`
+- **Metadatos incluidos:**
+  - Tipo de libro
+  - Tipo de acta
+  - Fecha del acta
+  - N° acta
+- **Firma digital:** "Gestion Documental Electronica" con timestamp
 
-**Recomendación:**
-Investigar formato real de comprobantes TAD. Permitir ingreso manual del hash como fallback.
+**Implementación:**
+- Usar `pdf-parse` para extraer texto
+- Regex: `/Hash:\s*([a-f0-9]{64})/i` para obtener el hash
+- Fallback: Input manual si la extracción falla
+- Validar que los metadatos coincidan con el acto
+
+**Documentado en:** Ejemplo en `/Libro de actas - Socios 2022-11-24 - 5 - Hash*.pdf`
 
 ---
 
 ### GAP-007: Sistema de templates estructurado
 
-**Impacto:** Medio
-**Requerimientos afectados:** FR-36, FR-37, FR-38, FR-39
+**Estado:** 🟡 PENDIENTE DECISIÓN
 
-**Descripción:**
-Los templates son centrales para generación de actos, pero falta definir:
-- Sintaxis de variables (`{{var}}`, `${var}`, otro)
-- Cómo validar que todas las variables están completas
-- Cómo versionar templates sin romper actos existentes
-- Herencia o composición de templates
+**Opciones evaluadas:**
 
-**Decisiones requeridas:**
-1. ¿Qué motor de templates usar? (Handlebars, Mustache, custom)
-2. ¿Cómo manejar variables opcionales vs requeridas?
-3. ¿Qué pasa con actos que usaron versión anterior del template?
+| Opción | Pros | Contras |
+|--------|------|---------|
+| **Handlebars** | Condicionales `{{#if}}`, loops `{{#each}}`, helpers custom | Más complejo, ~50KB |
+| **Mustache** | Muy simple, pequeño (~10KB), logic-less | Sin condicionales complejos |
+| **Custom** | Sin dependencias, control total | Hay que implementar todo |
 
-**Recomendación:**
-Usar Handlebars por su soporte de condicionales y loops. Mantener referencia a versión de template usada en cada acto.
+**Ejemplo de uso:**
+```handlebars
+En {{ciudad}}, a los {{dia}} días de {{mes}} de {{año}}...
+{{#if multiples_socios}}
+Los socios presentes son:
+{{#each socios}}
+- {{nombre}} (DNI {{dni}})
+{{/each}}
+{{else}}
+Con la presencia del único socio {{socio_unico.nombre}}...
+{{/if}}
+```
+
+**Recomendación:** Handlebars - Los templates de actas necesitan condicionales y loops. Guardar referencia a versión de template en cada acto.
+
+**Decisión requerida:** ¿Handlebars, Mustache, o custom?
 
 ---
 
@@ -273,25 +269,57 @@ CLAUDE.MD mencionaba "Notification System" pero REQUERIMIENTOS.MD original no te
 
 ---
 
-## 5. Preguntas Abiertas para el Negocio
+## 5. Preguntas Abiertas - RESPONDIDAS
 
 ### Q-001: Integración futura con TAD
-¿Hay planes de integrar directamente con la API de TAD en el futuro? Esto afecta el diseño de la arquitectura.
+**Respuesta:** No se sabe si TAD tiene API. Por ahora, flujo manual (copiar hash, subir comprobante).
+
+**Impacto:** No afecta diseño actual. Si existe API en el futuro, se puede agregar como feature.
+
+---
 
 ### Q-002: Multi-tenancy
-¿Cada sociedad es completamente aislada o hay escenarios de grupos empresarios que quieran ver múltiples sociedades consolidadas?
+**Respuesta:** Sí, un usuario puede ver más de una sociedad.
+
+**Impacto:** Ya contemplado en el diseño con `UsuarioXSociedad`. El JWT incluye lista de sociedades con permisos.
+
+---
 
 ### Q-003: Soporte offline
-¿Los usuarios necesitan trabajar sin conexión? Esto afecta significativamente la arquitectura.
+**Respuesta:** Sin soporte offline.
+
+**Impacto:** Simplifica arquitectura. No se necesita service worker ni sincronización.
+
+---
 
 ### Q-004: Firma digital
-El MVP excluye firma digital, pero ¿está planificada para futuro? ¿Qué tipo de firma (simple, avanzada, calificada)?
+**Respuesta:** Si se necesita firma digital, se gestiona afuera del sistema.
+
+**Impacto:** El sistema solo maneja PDFs ya firmados. No se necesita integración con proveedores de firma.
+
+---
 
 ### Q-005: Retención legal
-¿Hay requisitos legales sobre cuánto tiempo retener los documentos? ¿Se pueden eliminar después de X años?
+**Respuesta:**
+- Documentos finales solo se borran lógicamente
+- Plazo legal: 10 años
+- Es responsabilidad del usuario mantener la suscripción
+- Si deja de pagar, se pueden eliminar físicamente
+
+**Impacto:**
+- Implementar soft delete para todo
+- Agregar política de retención configurable
+- Job de limpieza para cuentas inactivas (futuro)
+
+---
 
 ### Q-006: Auditorías externas
-¿Los auditores externos necesitarán acceso al sistema? ¿Con qué rol?
+**Respuesta:** Sí, sería bueno tener log de eventos y versiones anteriores.
+
+**Impacto:** Ya contemplado con:
+- AuditLog para eventos
+- Versionado de Contexto y metadatos
+- Los auditores pueden ser usuarios RO de la sociedad
 
 ---
 
@@ -300,13 +328,13 @@ El MVP excluye firma digital, pero ¿está planificada para futuro? ¿Qué tipo 
 | Gap ID | Descripción | Impacto | Esfuerzo | Prioridad | Estado |
 |--------|-------------|---------|----------|-----------|--------|
 | GAP-001 | Proveedor de IA | Alto | Bajo | **P0** | ✅ Resuelto |
-| GAP-002 | Almacenamiento PDFs | Alto | Medio | **P0** | Pendiente |
-| GAP-003 | Procesamiento asíncrono | Alto | Alto | **P1** | Pendiente |
+| GAP-002 | Almacenamiento PDFs | Alto | Medio | **P0** | ✅ Resuelto |
+| GAP-003 | Procesamiento asíncrono | Alto | Alto | **P1** | 🟡 Pendiente decisión |
 | GAP-011 | OCR/Vision para PDFs | Medio-Alto | Medio | **P1** | ✅ Resuelto |
 | GAP-004 | Generación de PDFs | Medio-Alto | Medio | **P1** | Pendiente |
-| GAP-005 | Modelo de Contexto | Medio | Medio | **P2** | Pendiente |
-| GAP-006 | Extracción hash TAD | Medio | Bajo | **P2** | Pendiente |
-| GAP-007 | Sistema de templates | Medio | Medio | **P2** | Pendiente |
+| GAP-005 | Modelo de Contexto | Medio | Medio | **P2** | 🟡 Pendiente decisión |
+| GAP-006 | Extracción hash TAD | Medio | Bajo | **P2** | ✅ Resuelto |
+| GAP-007 | Sistema de templates | Medio | Medio | **P2** | 🟡 Pendiente decisión |
 | GAP-008 | Invitación usuarios | Bajo | Bajo | **P3** | Pendiente |
 | GAP-009 | Formato exportación | Bajo | Bajo | **P3** | Pendiente |
 | GAP-010 | Detalle auditoría | Bajo | Bajo | **P3** | Pendiente |
@@ -315,25 +343,27 @@ El MVP excluye firma digital, pero ¿está planificada para futuro? ¿Qué tipo 
 
 ## 7. Próximos Pasos Recomendados
 
-1. **Inmediato (esta semana):**
+1. **Completado:**
    - [x] Decidir proveedor de IA (GAP-001) → **OpenRouter**
    - [x] Definir estrategia de procesamiento PDFs (GAP-011) → **Vision API fallback**
-   - [ ] Decidir estrategia de almacenamiento (GAP-002)
-   - [ ] Responder preguntas Q-001 a Q-006
+   - [x] Decidir estrategia de almacenamiento (GAP-002) → **Volumen local, migrar a S3**
+   - [x] Responder preguntas Q-001 a Q-006 → **Todas respondidas**
+   - [x] Obtener ejemplos reales de comprobantes TAD (GAP-006) → **Formato analizado**
 
-2. **Antes de iniciar desarrollo:**
-   - [ ] Crear ADR para decisiones técnicas clave
-   - [ ] Definir librería de generación de PDFs (GAP-004)
-   - [ ] Definir sistema de colas (GAP-003)
+2. **Decisiones pendientes (elegir una opción):**
+   - [ ] GAP-003: ¿Custom SQLite o BullMQ+Redis para colas?
+   - [ ] GAP-005: ¿Markdown o JSON para Contexto?
+   - [ ] GAP-007: ¿Handlebars, Mustache, o custom para templates?
+   - [ ] GAP-004: Definir librería de generación de PDFs
 
-3. **Durante diseño de BD:**
-   - [ ] Definir formato de Contexto (GAP-005)
-   - [ ] Definir sintaxis de templates (GAP-007)
+3. **Antes de iniciar desarrollo:**
+   - [ ] Crear ADR (Architecture Decision Record) consolidando decisiones
+   - [ ] Diseñar schema de base de datos completo
+   - [ ] Definir estructura de carpetas del proyecto
 
 4. **Investigación paralela:**
-   - [ ] Obtener ejemplos reales de comprobantes TAD (GAP-006)
-   - [ ] Revisar templates de actos existentes
-   - [ ] Testear calidad de OCR con diferentes tipos de PDFs societarios
+   - [ ] Revisar templates de actos existentes (para crear templates iniciales)
+   - [ ] Testear calidad de Vision API con PDFs escaneados reales
 
 ---
 
