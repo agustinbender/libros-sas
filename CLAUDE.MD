@@ -10,9 +10,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 npm run dev
 
 
-# Database operations - Never execute a data operation that could trigger data loss or database reset whithout user confirmation
-npx prisma generate          # Generate Prisma client after schema changes
-npx prisma migrate dev       # Apply database migrations
+# Database operations - Never execute a data operation that could trigger data loss or database reset without user confirmation
+npm run migrate              # Apply pending SQL migrations
+npm run migrate:create       # Create new migration file
 
 ## DB Safety for risky db operations.
 #1. Backup.  
@@ -128,11 +128,29 @@ The application uses auto-scaling (min 0, auto-stop/start) to minimize costs. Sc
 
 ### Tech Stack
 - **Framework**: Next.js 15.4.1 with App Router
-- **Database**: SQLite
+- **Database**: SQLite via `@libsql/client` (Turso-compatible)
 - **Authentication**: JWT + bcrypt
 - **Validation**: Zod (backend + frontend)
 - **UI**: Tailwind CSS + React 19
 - **Language**: TypeScript
+
+### Database Strategy
+- **Client**: `@libsql/client` (same API as Turso for easy migration)
+- **Local Development**: `file:./data/dev.db`
+- **Future Production**: Turso (`libsql://tu-db.turso.io`)
+- **Migrations**: Numbered SQL files (`/migrations/001_init.sql`, etc.)
+- **Migration Tracking**: `_migrations` table with applied migrations
+- **Type Safety**: Zod schemas for runtime validation
+- **Connection**:
+  ```typescript
+  import { createClient } from '@libsql/client';
+
+  export const db = createClient({
+    url: process.env.DATABASE_URL || 'file:./data/dev.db',
+    authToken: process.env.TURSO_AUTH_TOKEN, // only for Turso
+  });
+  ```
+- **Utility Location**: `/src/lib/db.ts`
 
 ### Core Database Models
 - **ALWAYS check database schema before coding for or querying the database**

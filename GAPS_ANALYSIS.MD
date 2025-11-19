@@ -357,9 +357,10 @@ CLAUDE.MD mencionaba "Notification System" pero REQUERIMIENTOS.MD original no te
    - [x] GAP-004: Generación de PDFs → **pdf-lib**
 
 2. **Antes de iniciar desarrollo:**
-   - [ ] Diseñar schema de base de datos completo (Prisma)
+   - [ ] Diseñar schema de base de datos completo (SQL migrations)
    - [ ] Definir estructura de carpetas del proyecto
    - [ ] Configurar OpenRouter y probar conexión
+   - [ ] Configurar @libsql/client y crear migración inicial
 
 3. **Investigación paralela:**
    - [ ] Revisar templates de actos existentes (para crear templates iniciales)
