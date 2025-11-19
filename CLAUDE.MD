@@ -136,18 +136,88 @@ The application uses auto-scaling (min 0, auto-stop/start) to minimize costs. Sc
 
 ### Core Database Models
 - **ALWAYS check database schema before coding for or querying the database**
-- **Usuario**: Users with levels (read-on), availability, and soft delete support
-- **Sociedad**: List of companies whose books are being managed
-- **UsuarioXSociedad**: Access for users to a certain "sociedad" (owner, admin, Read-Write, Read-only)
-- **Books**: List of books of each company
-- **Acts**: List of acts for certain Sociedad
-- **ActsXSignatures**: List of signatures for each Acts
-- **Notification System**: Comprehensive email orchestration with quotas and logging
+
+#### Usuarios y Accesos
+- **Usuario**: Users with roles (SuperAdmin or regular), availability, and soft delete support
+- **Sociedad**: List of companies (SAS) whose books are being managed
+- **UsuarioXSociedad**: Access for users to a certain "sociedad" (Owner, Read-Write, Read-Only)
+
+#### Libros y Actos
+- **Libro**: Digital books for each company (Actas Socios, Actas Administración, Registro Acciones, Diario, Inventarios y Balances, IVA Compras, IVA Ventas)
+- **Acto**: Individual acts/documents belonging to a book with states (Draft, Pendiente TAD, Final, Error TAD)
+- **ActoMetadata**: Extracted metadata with versioning and traceability
+- **ActoVersion**: Draft version history for acts
+
+#### Contexto y Templates
+- **Contexto**: Living textual document summarizing the company's corporate situation
+- **ContextoVersion**: Version history of the context document
+- **Template**: Parameterizable act templates managed by SuperAdmin
+- **TemplateVersion**: Template version history
+
+#### Hashes y TAD
+- **DocumentHash**: Hash records for each document (hash_real, hash_anterior_declarado)
+- **ComprobanteTAD**: TAD receipts uploaded by users
+- **CadenaHash**: Hash chain validation records per book
+
+#### Auditoría y Notificaciones
+- **AuditLog**: Complete audit log (user, timestamp, action, entity, description)
+- **Notification**: Email orchestration with quotas and logging
+
+### AI Integration Strategy
+- **Provider**: OpenRouter (Vercel AI SDK)
+  - Flexibility to switch models (GPT-4, Claude, Llama, etc.)
+  - Automatic fallback if a model is down
+  - Easy cost comparison between models
+- **Use Cases**:
+  - Document classification (FR-06)
+  - Data extraction from PDFs (FR-08)
+  - Context generation and updates (FR-10, FR-11)
+  - Act text generation with templates (FR-17)
+  - Summary generation (FR-34)
+- **Error Handling**: Fallback to manual classification when confidence is low
+- **Cost Management**: Rate limiting and usage quotas per sociedad
+- **Prompt Management**: Centralized prompt templates in `/src/lib/ai/prompts/`
+- **Configuration**: Model selection per use case in environment variables
+
+### PDF Processing Strategy
+- **Text Extraction**:
+  - First attempt: `pdf-parse` or similar for text-based PDFs
+  - Fallback: Vision API for scanned/image-based PDFs
+- **Vision API Options** (via OpenRouter):
+  - GPT-4 Vision for complex documents
+  - Claude 3 Vision as alternative
+  - Gemini Pro Vision for cost optimization
+- **Processing Pipeline**:
+  1. Detect if PDF has selectable text
+  2. If yes → extract with pdf-parse
+  3. If no/poor quality → convert to images → Vision API
+  4. Combine extracted text with AI for classification/extraction
+- **OCR Fallback**: Consider Tesseract.js for offline OCR as budget option
+- **Utility Location**: `/src/lib/pdf/`
+
+### File Storage Strategy
+- **Storage Location**: Persistent volume at `/data/files/` (same volume as SQLite DB)
+- **Structure**: `/data/files/{sociedad_id}/{libro_id}/{acto_id}/`
+- **File Types**: PDFs (acts, TAD receipts), generated documents
+- **Backup**: Included in database backup strategy
+- **Limits**:
+  - Max file size: 50MB per PDF
+  - Max bulk upload: 100 files per batch
+- **Soft Delete**: Files retained when logically deleted
+
+### Hash Calculation (SHA-256)
+- **Library**: Node.js native `crypto` module
+- **Format**: Hexadecimal string (64 characters)
+- **Chain Validation**: Each document's `hash_anterior` must match previous document's `hash_real`
+- **First Document**: Uses empty string hash or special marker "PRIMER_DOCUMENTO"
+- **Utility Location**: `/src/lib/hash.ts`
 
 ### Authentication & Authorization
 - **JWT Payload**: Contains user info, List of Sociedades it belongs and the access for each one.
 - **Middleware**: `to be determined.`
-- **Role Hierarchy**: SuperAdmin > Institution Admin > Regular User
+- **Role Hierarchy**:
+  - **Global**: SuperAdmin (access to all sociedades)
+  - **Per Sociedad**: Owner > Read-Write (RW) > Read-Only (RO)
 
 ### Validation Pattern
 ```typescript
