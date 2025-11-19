@@ -46,18 +46,18 @@ Se identificaron gaps entre los requerimientos funcionales y la documentación t
 
 ### GAP-003: Procesamiento asíncrono de PDFs
 
-**Estado:** 🟡 PENDIENTE DECISIÓN
+**Estado:** ✅ RESUELTO
 
-**Opciones evaluadas:**
+**Decisión tomada:** Custom con SQLite para MVP
 
-| Opción | Pros | Contras |
-|--------|------|---------|
-| **BullMQ + Redis** | Maduro, dashboard UI, reintentos, prioridades | Requiere Redis (más infra/costo) |
-| **Custom con SQLite** | Sin dependencias extra, simple para MVP | Hay que implementar, sin dashboard |
+**Implementación:**
+- Tabla `job_queue` con campos: id, type, payload, status, attempts, error, created_at, updated_at
+- Estados: pending, processing, completed, failed
+- Worker simple con setInterval o cron job
+- Reintentos con backoff exponencial (3 intentos máx)
+- Migrar a BullMQ + Redis cuando se necesite escalar
 
-**Recomendación:** Para MVP usar custom con SQLite (tabla `job_queue`). Migrar a BullMQ cuando escale.
-
-**Decisión requerida:** ¿Custom SQLite para MVP o BullMQ desde el inicio?
+**Documentado en:** CLAUDE.MD - Sección "Async Processing Strategy"
 
 ---
 
@@ -90,39 +90,37 @@ Muchos PDFs societarios son escaneados (sin texto seleccionable) y requieren OCR
 
 ### GAP-004: Generación de PDFs con encabezado de hash
 
-**Impacto:** Medio-Alto
-**Requerimientos afectados:** FR-20, FR-24
+**Estado:** ✅ RESUELTO
 
-**Descripción:**
-Se debe generar PDFs con encabezado que incluya hash anterior, pero no se definió:
-- Librería de generación de PDF (puppeteer, pdf-lib, jsPDF)
-- Template del encabezado
-- Cómo insertar encabezado en PDFs existentes (IVA)
+**Decisión tomada:** pdf-lib para manipulación, Puppeteer/React-PDF para generación
 
-**Decisiones requeridas:**
-1. ¿Qué librería usar para generar PDFs?
-2. ¿Cómo insertar página de encabezado en PDF existente?
-3. ¿Formato exacto del encabezado?
+**Implementación:**
+- **pdf-lib**: Para manipular PDFs existentes (insertar página de encabezado)
+- **Puppeteer o React-PDF (@react-pdf/renderer)**: Para generar nuevos PDFs desde HTML/React
+- **Encabezado hash**: Primera página insertada con:
+  - Hash anterior declarado
+  - Fecha del acto
+  - Número de acto
+  - QR code opcional con link a verificación
 
-**Recomendación:**
-Usar `pdf-lib` para manipulación de PDFs existentes y React-PDF o Puppeteer para generar nuevos.
+**Documentado en:** CLAUDE.MD - Sección "PDF Generation Strategy"
 
 ---
 
 ### GAP-005: Modelo de Contexto y versionado
 
-**Estado:** 🟡 PENDIENTE DECISIÓN
+**Estado:** ✅ RESUELTO
 
-**Opciones evaluadas:**
+**Decisión tomada:** Markdown
 
-| Opción | Pros | Contras |
-|--------|------|---------|
-| **Markdown** | Familiar, fácil renderizar, IA lo genera bien, versionable | Menos control estructura |
-| **JSON estructurado** | Validación schema, consultas granulares | Necesita UI custom, menos flexible |
+**Implementación:**
+- Contexto almacenado como texto Markdown en la BD
+- Renderizado con `react-markdown` en frontend
+- Comparación de versiones con `jsdiff` (diff semántico)
+- UI con split view: versión anterior | versión actual
+- Editor: textarea simple o editor Markdown básico
 
-**Recomendación:** Markdown - Balance entre flexibilidad y estructura. Usar `diff` o `jsdiff` para comparar versiones.
-
-**Decisión requerida:** ¿Markdown o JSON estructurado?
+**Documentado en:** CLAUDE.MD - Sección "Context Document Strategy"
 
 ---
 
@@ -154,32 +152,36 @@ El comprobante TAD es un PDF generado por la IGJ con:
 
 ### GAP-007: Sistema de templates estructurado
 
-**Estado:** 🟡 PENDIENTE DECISIÓN
+**Estado:** ✅ RESUELTO
 
-**Opciones evaluadas:**
+**Decisión tomada:** Markdown con placeholders simples, AI hace las sustituciones
 
-| Opción | Pros | Contras |
-|--------|------|---------|
-| **Handlebars** | Condicionales `{{#if}}`, loops `{{#each}}`, helpers custom | Más complejo, ~50KB |
-| **Mustache** | Muy simple, pequeño (~10KB), logic-less | Sin condicionales complejos |
-| **Custom** | Sin dependencias, control total | Hay que implementar todo |
+**Implementación:**
+- Templates en formato Markdown con placeholders tipo `{{variable}}`
+- **Sin motor de templates** - la AI interpreta y adapta el contenido
+- La AI es responsable de:
+  - Reemplazar variables con valores del contexto
+  - Adaptar singular/plural según cantidad de socios
+  - Agregar/quitar secciones según el caso
+  - Ajustar redacción al contexto específico
+- Los templates son "guías/ejemplos" no templates mecánicos
+- Más flexible para casos edge y variaciones
 
-**Ejemplo de uso:**
-```handlebars
-En {{ciudad}}, a los {{dia}} días de {{mes}} de {{año}}...
-{{#if multiples_socios}}
-Los socios presentes son:
-{{#each socios}}
-- {{nombre}} (DNI {{dni}})
-{{/each}}
-{{else}}
-Con la presencia del único socio {{socio_unico.nombre}}...
-{{/if}}
+**Ejemplo de template:**
+```markdown
+En {{ciudad}}, a los {{dia}} días de {{mes}} de {{año}}, siendo las {{hora}} horas,
+se constituye en el domicilio de la sociedad la reunión de socios de {{nombre_sociedad}}
+con la presencia del Administrador titular y único accionista, tenedor de la totalidad
+del Capital Social, Sr. {{nombre_socio1}}.
+
+El Sr. {{apellido_socio1}} resuelve:
+1. Que el acta sea firmada por él.
+2. {{resolucion_principal}}
 ```
 
-**Recomendación:** Handlebars - Los templates de actas necesitan condicionales y loops. Guardar referencia a versión de template en cada acto.
+**Nota:** La AI adaptará automáticamente si hay múltiples socios, cambiando "único accionista" por la lista correspondiente.
 
-**Decisión requerida:** ¿Handlebars, Mustache, o custom?
+**Documentado en:** CLAUDE.MD - Sección "Template Strategy"
 
 ---
 
@@ -329,12 +331,12 @@ CLAUDE.MD mencionaba "Notification System" pero REQUERIMIENTOS.MD original no te
 |--------|-------------|---------|----------|-----------|--------|
 | GAP-001 | Proveedor de IA | Alto | Bajo | **P0** | ✅ Resuelto |
 | GAP-002 | Almacenamiento PDFs | Alto | Medio | **P0** | ✅ Resuelto |
-| GAP-003 | Procesamiento asíncrono | Alto | Alto | **P1** | 🟡 Pendiente decisión |
+| GAP-003 | Procesamiento asíncrono | Alto | Alto | **P1** | ✅ Resuelto |
 | GAP-011 | OCR/Vision para PDFs | Medio-Alto | Medio | **P1** | ✅ Resuelto |
-| GAP-004 | Generación de PDFs | Medio-Alto | Medio | **P1** | Pendiente |
-| GAP-005 | Modelo de Contexto | Medio | Medio | **P2** | 🟡 Pendiente decisión |
+| GAP-004 | Generación de PDFs | Medio-Alto | Medio | **P1** | ✅ Resuelto |
+| GAP-005 | Modelo de Contexto | Medio | Medio | **P2** | ✅ Resuelto |
 | GAP-006 | Extracción hash TAD | Medio | Bajo | **P2** | ✅ Resuelto |
-| GAP-007 | Sistema de templates | Medio | Medio | **P2** | 🟡 Pendiente decisión |
+| GAP-007 | Sistema de templates | Medio | Medio | **P2** | ✅ Resuelto |
 | GAP-008 | Invitación usuarios | Bajo | Bajo | **P3** | Pendiente |
 | GAP-009 | Formato exportación | Bajo | Bajo | **P3** | Pendiente |
 | GAP-010 | Detalle auditoría | Bajo | Bajo | **P3** | Pendiente |
@@ -349,21 +351,20 @@ CLAUDE.MD mencionaba "Notification System" pero REQUERIMIENTOS.MD original no te
    - [x] Decidir estrategia de almacenamiento (GAP-002) → **Volumen local, migrar a S3**
    - [x] Responder preguntas Q-001 a Q-006 → **Todas respondidas**
    - [x] Obtener ejemplos reales de comprobantes TAD (GAP-006) → **Formato analizado**
+   - [x] GAP-003: Procesamiento asíncrono → **Custom SQLite para MVP**
+   - [x] GAP-005: Formato del Contexto → **Markdown**
+   - [x] GAP-007: Sistema de templates → **Markdown + AI (sin motor)**
+   - [x] GAP-004: Generación de PDFs → **pdf-lib**
 
-2. **Decisiones pendientes (elegir una opción):**
-   - [ ] GAP-003: ¿Custom SQLite o BullMQ+Redis para colas?
-   - [ ] GAP-005: ¿Markdown o JSON para Contexto?
-   - [ ] GAP-007: ¿Handlebars, Mustache, o custom para templates?
-   - [ ] GAP-004: Definir librería de generación de PDFs
-
-3. **Antes de iniciar desarrollo:**
-   - [ ] Crear ADR (Architecture Decision Record) consolidando decisiones
-   - [ ] Diseñar schema de base de datos completo
+2. **Antes de iniciar desarrollo:**
+   - [ ] Diseñar schema de base de datos completo (Prisma)
    - [ ] Definir estructura de carpetas del proyecto
+   - [ ] Configurar OpenRouter y probar conexión
 
-4. **Investigación paralela:**
+3. **Investigación paralela:**
    - [ ] Revisar templates de actos existentes (para crear templates iniciales)
    - [ ] Testear calidad de Vision API con PDFs escaneados reales
+   - [ ] Definir prompts iniciales para cada caso de uso de IA
 
 ---
 

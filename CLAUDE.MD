@@ -212,6 +212,59 @@ The application uses auto-scaling (min 0, auto-stop/start) to minimize costs. Sc
 - **First Document**: Uses empty string hash or special marker "PRIMER_DOCUMENTO"
 - **Utility Location**: `/src/lib/hash.ts`
 
+### Async Processing Strategy
+- **Approach**: Custom implementation with SQLite for MVP
+- **Queue Table**: `job_queue` with fields:
+  - id, type, payload (JSON), status, attempts, error, created_at, updated_at
+- **Job Types**: pdf_process, ai_extraction, hash_calculation, notification
+- **States**: pending, processing, completed, failed
+- **Worker**: Simple setInterval or cron job checking for pending jobs
+- **Retry Logic**: Exponential backoff (2s, 4s, 8s), max 3 attempts
+- **Future Migration**: Move to BullMQ + Redis when scaling requires it
+- **Utility Location**: `/src/lib/queue/`
+
+### Context Document Strategy
+- **Format**: Markdown text stored in database
+- **Rendering**: `react-markdown` for frontend display
+- **Versioning**: Each update creates new `ContextoVersion` record
+- **Diff Display**: Use `jsdiff` library for semantic comparison
+- **UI Pattern**: Split view showing previous vs current version
+- **Editor**: Simple textarea or basic Markdown editor
+- **AI Updates**: AI generates updated Markdown based on new acts
+- **Utility Location**: `/src/lib/context/`
+
+### Template Strategy
+- **Format**: Markdown with simple placeholders `{{variable}}`
+- **Engine**: None - AI performs all substitutions and adaptations
+- **AI Responsibilities**:
+  - Replace placeholders with values from context/metadata
+  - Adapt content for singular/plural (one socio vs multiple)
+  - Add/remove sections based on the specific case
+  - Adjust language and phrasing contextually
+- **Template Purpose**: Serve as "examples/guides" not mechanical templates
+- **Flexibility**: AI can deviate from template when context requires it
+- **Storage**: Templates stored in database with version history
+- **Utility Location**: `/src/lib/templates/`
+
+### PDF Generation Strategy
+- **Manipulation (existing PDFs)**: `pdf-lib`
+  - Insert hash header page at beginning
+  - Merge multiple PDFs
+  - Extract pages
+- **Generation (new PDFs)**: Puppeteer or `@react-pdf/renderer`
+  - Generate acts from AI-produced text
+  - Create cover pages, indices
+- **Hash Header Content**:
+  - Hash anterior declarado
+  - Fecha del acto
+  - Número de acto
+  - Optional: QR code linking to verification
+- **TAD Receipt Extraction**:
+  - Use `pdf-parse` for text extraction
+  - Regex: `/Hash:\s*([a-f0-9]{64})/i`
+  - Fallback: Manual input if extraction fails
+- **Utility Location**: `/src/lib/pdf/`
+
 ### Authentication & Authorization
 - **JWT Payload**: Contains user info, List of Sociedades it belongs and the access for each one.
 - **Middleware**: `to be determined.`
