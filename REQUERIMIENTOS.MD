@@ -147,13 +147,19 @@ No incluye (MVP):
 
 - El sistema, utilizando IA, debe clasificar cada PDF en una de las categorías:
   - Estatuto / Modificación de estatuto.
+  - Constancia de registración IGJ (plancha de certificación).
   - Acta de socios/asamblea.
   - Acta de administración (directorio/gerencia).
   - Registro de acciones / movimiento accionario.
   - Balance / inventario.
   - Libro IVA compras.
   - Libro IVA ventas.
+  - Comprobante TAD (registro de hash).
   - Otro / sin clasificar (si no hay suficientes señales).
+- **Detección de PDFs embebidos:**
+  - Los documentos de IGJ frecuentemente contienen el documento original como PDF adjunto/embebido.
+  - El sistema debe detectar y extraer automáticamente estos PDFs embebidos.
+  - Procesar tanto el documento principal como los adjuntos.
 
 **FR-07 – Creación automática de libros digitales**
 
@@ -167,16 +173,35 @@ No incluye (MVP):
 
 **FR-08 – Extracción automática de datos de la sociedad**
 
-- A partir del estatuto y sus modificaciones, el sistema debe extraer y completar automáticamente:
-  - Denominación social completa.
-  - CUIT (si aparece).
-  - Domicilio legal.
-  - Fecha de constitución.
-  - Duración de la sociedad.
-  - Fecha de cierre de ejercicio.
-  - Capital social inicial y, si es posible, capital vigente.
-  - Estructura básica de órganos (director/gerente/socio único).
-  - Reglas básicas de mandatos y quórums en texto (no necesariamente estructuradas).
+- A partir del estatuto, constancia de registración IGJ y sus modificaciones, el sistema debe extraer y completar automáticamente:
+  - **Datos básicos:**
+    - Denominación social completa.
+    - CUIT de la sociedad (ej: 30716713357).
+    - Número de inscripción IGJ (ej: RL-2019-110008094-APN-DA#IGJ).
+    - Domicilio legal (jurisdicción).
+    - Sede social (dirección específica).
+    - Fecha de constitución.
+    - Duración de la sociedad (años).
+    - Fecha de cierre de ejercicio.
+  - **Capital y acciones:**
+    - Capital social inicial.
+    - Capital social vigente (si hubo aumentos).
+    - Cantidad y tipo de acciones.
+    - Valor nominal por acción.
+  - **Socios/Accionistas:**
+    - Nombre completo de cada socio.
+    - DNI/CUIT de cada socio.
+    - Porcentaje de participación.
+    - Cantidad de acciones por socio.
+  - **Autoridades:**
+    - Administradores titulares (nombre, DNI, cargo).
+    - Administradores suplentes (nombre, DNI, cargo).
+    - Órgano de fiscalización (si aplica).
+  - **Reglas de funcionamiento:**
+    - Estructura básica de órganos.
+    - Reglas de quórum y mayorías.
+    - Reglas de transferencia de acciones.
+  - **Objeto social:** Resumen de las actividades principales.
 
 **FR-09 – Campos editables con trazabilidad**
 

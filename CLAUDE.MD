@@ -269,6 +269,7 @@ The application uses auto-scaling (min 0, auto-stop/start) to minimize costs. Sc
   - Insert hash header page at beginning
   - Merge multiple PDFs
   - Extract pages
+  - Detect and extract embedded PDF attachments
 - **Generation (new PDFs)**: Puppeteer or `@react-pdf/renderer`
   - Generate acts from AI-produced text
   - Create cover pages, indices
@@ -281,7 +282,19 @@ The application uses auto-scaling (min 0, auto-stop/start) to minimize costs. Sc
   - Use `pdf-parse` for text extraction
   - Regex: `/Hash:\s*([a-f0-9]{64})/i`
   - Fallback: Manual input if extraction fails
+- **Embedded PDF Detection**:
+  - IGJ documents often embed the original document as attachment
+  - Use `pdf-lib` to check for EmbeddedFiles in PDF catalog
+  - Extract and process attachments separately
+  - Validate consistency between main PDF and attachment
 - **Utility Location**: `/src/lib/pdf/`
+
+### Estatuto Processing
+- **Source documents**:
+  - Estatuto original (Formulario Estatuto S.A.S.)
+  - Constancia de registración IGJ (Plancha de certificación)
+- **AI extraction**: Use Vision API or text extraction + prompts to populate Contexto inicial
+- **Fields to extract**: See FR-08 in REQUERIMIENTOS.MD for complete list
 
 ### Authentication & Authorization
 - **JWT Payload**: Contains user info, List of Sociedades it belongs and the access for each one.
