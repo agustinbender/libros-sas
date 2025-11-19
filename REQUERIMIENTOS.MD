@@ -78,16 +78,6 @@ No incluye (MVP):
   - Ver libros, actos, documentos PDF, hashes y contexto.
   - No puede modificar ni crear.
 
-### 3.5 Perfil “Contador”
-
-- Puede ser RW sobre ciertos libros (ej. IVA compras/ventas, diario).
-- Flujo simplificado orientado a:
-  - Subir PDF generado desde su sistema.
-  - Obtener hash + documento con encabezado correcto.
-  - Subir comprobante TAD.
-
-*(A nivel implementación puede ser un RW con permisos restringidos, pero funcionalmente se contempla su flujo específico.)*
-
 ---
 
 ## 4. Conceptos clave
@@ -108,8 +98,13 @@ No incluye (MVP):
 
 **FR-01 – Gestión de roles**
 
-- El sistema debe soportar al menos los roles: Superadmin, Owner de Sociedad, Usuario RW, Usuario RO.
-- Cada usuario debe tener un rol global (Superadmin o no) y permisos por sociedad (Owner / RW / RO).
+- El sistema debe soportar los siguientes roles:
+  - **SuperAdmin**: Acceso global a todas las sociedades.
+  - **Owner**: Dueño de una sociedad específica.
+  - **Read-Write (RW)**: Puede ver y modificar.
+  - **Read-Only (RO)**: Solo puede ver.
+- Cada usuario debe tener un rol global (SuperAdmin o no) y permisos por sociedad (Owner / RW / RO).
+- Nota: Profesionales externos (contadores, abogados) se agregan como usuarios normales con el rol que corresponda.
 
 **FR-02 – Asociación usuario–sociedad**
 
@@ -539,6 +534,208 @@ Cada template debe contemplar al menos:
   - Nuevos tipos de actos,
   - Nuevos tipos de libros,
   sin romper el diseño actual.
+
+---
+
+## 7. Requerimientos adicionales (identificados en revisión)
+
+### 7.1 Manejo de errores y recuperación
+
+**FR-40 – Manejo de errores de IA**
+
+- El sistema debe contemplar escenarios donde la IA no pueda clasificar o extraer datos:
+  - Si la confianza de clasificación es baja (< umbral configurable), marcar documento como "Requiere revisión manual".
+  - Permitir al usuario reclasificar manualmente documentos.
+  - Registrar feedback del usuario para mejora continua del modelo.
+- Debe mostrarse claramente qué datos fueron extraídos automáticamente vs ingresados manualmente.
+
+**FR-41 – Recuperación de Error TAD**
+
+- Cuando un acto está en estado "Error TAD":
+  - Mostrar claramente la discrepancia (hash esperado vs hash del comprobante).
+  - Permitir al usuario:
+    - Subir un nuevo comprobante TAD.
+    - Regenerar el PDF (lo cual invalida el hash anterior y requiere nuevo registro).
+  - Si se regenera el PDF, el sistema debe:
+    - Crear una nueva versión del acto.
+    - Actualizar la cadena de hashes de documentos posteriores (si existen).
+    - Registrar el motivo de la regeneración.
+
+**FR-42 – Manejo de PDFs ilegibles o con OCR fallido**
+
+- Si el sistema no puede procesar un PDF (calidad muy baja, encriptado, corrupto):
+  - Notificar al usuario con descripción del problema.
+  - Marcar el documento como "Procesamiento fallido".
+  - Permitir:
+    - Reintentar procesamiento.
+    - Cargar versión alternativa del archivo.
+    - Ingresar datos manualmente sin extracción automática.
+
+---
+
+### 7.2 Dashboard y notificaciones
+
+**FR-43 – Dashboard de estado de la sociedad**
+
+- Para cada sociedad, mostrar un dashboard que incluya:
+  - Cantidad de actos por estado (Draft, Pendiente TAD, Final, Error).
+  - Alertas activas (errores de cadena de hash, inconsistencias detectadas).
+  - Próximos vencimientos (mandatos de autoridades que están por vencer).
+  - Últimos actos creados/modificados.
+  - Progreso del onboarding (si hay documentos en procesamiento).
+
+**FR-44 – Sistema de notificaciones**
+
+- El sistema debe enviar notificaciones (email y/o in-app) para:
+  - Actos pendientes de registro TAD por más de X días (configurable).
+  - Vencimiento próximo de mandatos de autoridades (30, 15, 7 días antes).
+  - Errores detectados (Error TAD, corte de cadena de hash).
+  - Invitaciones a sociedad (nuevo usuario invitado).
+  - Finalización de procesamiento de carga masiva.
+- El usuario debe poder configurar qué notificaciones recibir.
+
+**FR-45 – Proceso de onboarding detallado con feedback**
+
+- Durante la carga masiva de PDFs:
+  - Mostrar cola de procesamiento con estado de cada archivo.
+  - Estados posibles: En cola, Procesando, Clasificado, Error.
+  - Barra de progreso general.
+  - Tiempo estimado de finalización.
+  - Permitir cancelar procesamiento de archivos en cola.
+- Al finalizar:
+  - Mostrar resumen: X documentos procesados, Y clasificados automáticamente, Z requieren revisión.
+  - Link directo a documentos que requieren atención.
+
+---
+
+### 7.3 Exportación y respaldo
+
+**FR-46 – Exportación de datos de la sociedad**
+
+- Permitir exportar:
+  - Libro completo: PDF compilado con todos los actos en orden cronológico.
+  - Backup completo: ZIP con todos los PDFs originales + metadatos en JSON/CSV.
+  - Contexto de la sociedad: PDF o Markdown.
+  - Índice de actos: CSV con metadatos de todos los actos.
+- Solo Owner y SuperAdmin pueden exportar backup completo.
+
+---
+
+### 7.4 Control y seguridad adicional
+
+**FR-47 – Límites y cuotas**
+
+- El sistema debe implementar límites configurables:
+  - Máximo de sociedades por cuenta de usuario (para planes futuros).
+  - Máximo de archivos por carga masiva: 100 archivos.
+  - Tamaño máximo por archivo: 50 MB.
+  - Llamadas a IA por sociedad/mes (para control de costos).
+- Mostrar uso actual vs límites al usuario.
+
+**FR-48 – Manejo de conflictos de edición concurrente**
+
+- Si dos usuarios intentan editar el mismo borrador simultáneamente:
+  - Usar bloqueo optimista basado en versión.
+  - Al guardar, verificar que la versión no haya cambiado.
+  - Si hay conflicto, mostrar ambas versiones y permitir al usuario resolver.
+  - Registrar conflictos en auditoría.
+
+**FR-49 – Permisos granulares por libro (futuro)**
+
+- Evaluar para versiones futuras la posibilidad de permisos específicos por libro.
+- Para MVP: los permisos se aplican a nivel de sociedad completa.
+- Si se implementa, sería adicional al permiso general de la sociedad.
+
+---
+
+### 7.5 Flujos específicos del dominio
+
+**FR-50 – Regeneración de PDF antes de registro TAD**
+
+- Mientras un acto esté en estado "Pendiente de registro TAD" y no se haya subido comprobante:
+  - Permitir volver a estado Draft para hacer correcciones.
+  - Al regenerar PDF:
+    - Recalcular hash.
+    - Mantener el mismo hash_anterior (no cambia la posición en la cadena).
+    - Registrar en auditoría el motivo de la regeneración.
+
+**FR-51 – Primer documento de un libro (inicio de cadena)**
+
+- Para el primer documento de cada libro:
+  - El campo hash_anterior debe contener un valor especial: "PRIMER_DOCUMENTO_DEL_LIBRO".
+  - El encabezado del PDF debe indicar: "Este es el primer documento de este libro digital. No existe hash anterior."
+  - Esto aplica tanto para libros nuevos como para libros que inician su digitalización.
+
+**FR-52 – Organización por ejercicio contable**
+
+- Para libros que se organizan por ejercicio (Diario, Inventarios y Balances, IVA):
+  - Permitir crear "ejercicios" con fecha de inicio y cierre.
+  - Los actos se asocian a un ejercicio.
+  - La numeración puede reiniciar por ejercicio o ser continua (configurable).
+  - La cadena de hashes es continua independientemente del ejercicio.
+
+**FR-53 – Transferencia de ownership de sociedad**
+
+- El Owner actual debe poder transferir ownership a otro usuario:
+  - El nuevo Owner debe tener cuenta activa en el sistema.
+  - Requiere confirmación de ambas partes (email de confirmación).
+  - El Owner anterior pasa a ser RW automáticamente.
+  - Registrar transferencia en auditoría con detalle completo.
+
+**FR-54 – Actos que afectan múltiples áreas del contexto**
+
+- Cuando un acto afecta múltiples aspectos (ej: asamblea que aprueba balance Y cambia autoridades):
+  - La IA debe identificar todos los cambios relevantes.
+  - Proponer actualizaciones separadas al Contexto para cada aspecto.
+  - El usuario puede aceptar/rechazar cada propuesta individualmente.
+  - Mantener relación entre el acto y todas las actualizaciones de contexto que generó.
+
+---
+
+## 8. Requerimientos no funcionales adicionales
+
+**NFR-05 – Estrategia de integración con IA**
+
+- El sistema debe definir:
+  - Proveedor de IA a utilizar (OpenAI GPT-4, Claude, etc.).
+  - Estrategia de manejo de prompts (templates centralizados).
+  - Manejo de errores y timeouts del servicio de IA.
+  - Rate limiting y control de costos.
+  - Fallback a procesamiento manual cuando IA no está disponible.
+
+**NFR-06 – Almacenamiento de archivos**
+
+- Los archivos PDF deben almacenarse de forma segura:
+  - Ubicación: Volumen persistente separado o mismo volumen que BD.
+  - Estructura organizada por sociedad/libro/acto.
+  - Backup incluido en estrategia general de respaldo.
+  - Retención de archivos de entidades borradas lógicamente.
+  - Encriptación at-rest recomendada para datos sensibles.
+
+**NFR-07 – Performance de procesamiento masivo**
+
+- El procesamiento de carga masiva de PDFs debe:
+  - Ejecutarse de forma asíncrona (no bloquear UI).
+  - Usar cola de procesamiento con workers.
+  - Proveer feedback de progreso en tiempo real.
+  - Permitir procesamiento en paralelo de múltiples archivos.
+  - Completar carga de 50 PDFs en menos de 10 minutos (objetivo).
+
+**NFR-08 – Accesibilidad**
+
+- La interfaz debe cumplir con estándares de accesibilidad:
+  - WCAG 2.1 nivel AA como mínimo.
+  - Navegación por teclado completa.
+  - Compatibilidad con lectores de pantalla.
+  - Contraste adecuado y textos legibles.
+
+**NFR-09 – Internacionalización**
+
+- Para MVP: Solo español (Argentina).
+- El sistema debe estar preparado para internacionalización futura:
+  - Textos externalizados en archivos de traducción.
+  - Formatos de fecha/número configurables por locale.
+  - Posible expansión a otros países con estructuras societarias similares.
 
 ---
 

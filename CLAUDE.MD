@@ -10,9 +10,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 npm run dev
 
 
-# Database operations - Never execute a data operation that could trigger data loss or database reset whithout user confirmation
-npx prisma generate          # Generate Prisma client after schema changes
-npx prisma migrate dev       # Apply database migrations
+# Database operations - Never execute a data operation that could trigger data loss or database reset without user confirmation
+npm run migrate              # Apply pending SQL migrations
+npm run migrate:create       # Create new migration file
 
 ## DB Safety for risky db operations.
 #1. Backup.  
@@ -128,26 +128,167 @@ The application uses auto-scaling (min 0, auto-stop/start) to minimize costs. Sc
 
 ### Tech Stack
 - **Framework**: Next.js 15.4.1 with App Router
-- **Database**: SQLite
+- **Database**: SQLite via `@libsql/client` (Turso-compatible)
 - **Authentication**: JWT + bcrypt
 - **Validation**: Zod (backend + frontend)
 - **UI**: Tailwind CSS + React 19
 - **Language**: TypeScript
 
+### Database Strategy
+- **Client**: `@libsql/client` (same API as Turso for easy migration)
+- **Local Development**: `file:./data/dev.db`
+- **Future Production**: Turso (`libsql://tu-db.turso.io`)
+- **Migrations**: Numbered SQL files (`/migrations/001_init.sql`, etc.)
+- **Migration Tracking**: `_migrations` table with applied migrations
+- **Type Safety**: Zod schemas for runtime validation
+- **Connection**:
+  ```typescript
+  import { createClient } from '@libsql/client';
+
+  export const db = createClient({
+    url: process.env.DATABASE_URL || 'file:./data/dev.db',
+    authToken: process.env.TURSO_AUTH_TOKEN, // only for Turso
+  });
+  ```
+- **Utility Location**: `/src/lib/db.ts`
+
 ### Core Database Models
 - **ALWAYS check database schema before coding for or querying the database**
-- **Usuario**: Users with levels (read-on), availability, and soft delete support
-- **Sociedad**: List of companies whose books are being managed
-- **UsuarioXSociedad**: Access for users to a certain "sociedad" (owner, admin, Read-Write, Read-only)
-- **Books**: List of books of each company
-- **Acts**: List of acts for certain Sociedad
-- **ActsXSignatures**: List of signatures for each Acts
-- **Notification System**: Comprehensive email orchestration with quotas and logging
+
+#### Usuarios y Accesos
+- **Usuario**: Users with roles (SuperAdmin or regular), availability, and soft delete support
+- **Sociedad**: List of companies (SAS) whose books are being managed
+- **UsuarioXSociedad**: Access for users to a certain "sociedad" (Owner, Read-Write, Read-Only)
+
+#### Libros y Actos
+- **Libro**: Digital books for each company (Actas Socios, Actas Administración, Registro Acciones, Diario, Inventarios y Balances, IVA Compras, IVA Ventas)
+- **Acto**: Individual acts/documents belonging to a book with states (Draft, Pendiente TAD, Final, Error TAD)
+- **ActoMetadata**: Extracted metadata with versioning and traceability
+- **ActoVersion**: Draft version history for acts
+
+#### Contexto y Templates
+- **Contexto**: Living textual document summarizing the company's corporate situation
+- **ContextoVersion**: Version history of the context document
+- **Template**: Parameterizable act templates managed by SuperAdmin
+- **TemplateVersion**: Template version history
+
+#### Hashes y TAD
+- **DocumentHash**: Hash records for each document (hash_real, hash_anterior_declarado)
+- **ComprobanteTAD**: TAD receipts uploaded by users
+- **CadenaHash**: Hash chain validation records per book
+
+#### Auditoría y Notificaciones
+- **AuditLog**: Complete audit log (user, timestamp, action, entity, description)
+- **Notification**: Email orchestration with quotas and logging
+
+### AI Integration Strategy
+- **Provider**: OpenRouter (Vercel AI SDK)
+  - Flexibility to switch models (GPT-4, Claude, Llama, etc.)
+  - Automatic fallback if a model is down
+  - Easy cost comparison between models
+- **Use Cases**:
+  - Document classification (FR-06)
+  - Data extraction from PDFs (FR-08)
+  - Context generation and updates (FR-10, FR-11)
+  - Act text generation with templates (FR-17)
+  - Summary generation (FR-34)
+- **Error Handling**: Fallback to manual classification when confidence is low
+- **Cost Management**: Rate limiting and usage quotas per sociedad
+- **Prompt Management**: Centralized prompt templates in `/src/lib/ai/prompts/`
+- **Configuration**: Model selection per use case in environment variables
+
+### PDF Processing Strategy
+- **Text Extraction**:
+  - First attempt: `pdf-parse` or similar for text-based PDFs
+  - Fallback: Vision API for scanned/image-based PDFs
+- **Vision API Options** (via OpenRouter):
+  - GPT-4 Vision for complex documents
+  - Claude 3 Vision as alternative
+  - Gemini Pro Vision for cost optimization
+- **Processing Pipeline**:
+  1. Detect if PDF has selectable text
+  2. If yes → extract with pdf-parse
+  3. If no/poor quality → convert to images → Vision API
+  4. Combine extracted text with AI for classification/extraction
+- **OCR Fallback**: Consider Tesseract.js for offline OCR as budget option
+- **Utility Location**: `/src/lib/pdf/`
+
+### File Storage Strategy
+- **Storage Location**: Persistent volume at `/data/files/` (same volume as SQLite DB)
+- **Structure**: `/data/files/{sociedad_id}/{libro_id}/{acto_id}/`
+- **File Types**: PDFs (acts, TAD receipts), generated documents
+- **Backup**: Included in database backup strategy
+- **Limits**:
+  - Max file size: 50MB per PDF
+  - Max bulk upload: 100 files per batch
+- **Soft Delete**: Files retained when logically deleted
+
+### Hash Calculation (SHA-256)
+- **Library**: Node.js native `crypto` module
+- **Format**: Hexadecimal string (64 characters)
+- **Chain Validation**: Each document's `hash_anterior` must match previous document's `hash_real`
+- **First Document**: Uses empty string hash or special marker "PRIMER_DOCUMENTO"
+- **Utility Location**: `/src/lib/hash.ts`
+
+### Async Processing Strategy
+- **Approach**: Custom implementation with SQLite for MVP
+- **Queue Table**: `job_queue` with fields:
+  - id, type, payload (JSON), status, attempts, error, created_at, updated_at
+- **Job Types**: pdf_process, ai_extraction, hash_calculation, notification
+- **States**: pending, processing, completed, failed
+- **Worker**: Simple setInterval or cron job checking for pending jobs
+- **Retry Logic**: Exponential backoff (2s, 4s, 8s), max 3 attempts
+- **Future Migration**: Move to BullMQ + Redis when scaling requires it
+- **Utility Location**: `/src/lib/queue/`
+
+### Context Document Strategy
+- **Format**: Markdown text stored in database
+- **Rendering**: `react-markdown` for frontend display
+- **Versioning**: Each update creates new `ContextoVersion` record
+- **Diff Display**: Use `jsdiff` library for semantic comparison
+- **UI Pattern**: Split view showing previous vs current version
+- **Editor**: Simple textarea or basic Markdown editor
+- **AI Updates**: AI generates updated Markdown based on new acts
+- **Utility Location**: `/src/lib/context/`
+
+### Template Strategy
+- **Format**: Markdown with simple placeholders `{{variable}}`
+- **Engine**: None - AI performs all substitutions and adaptations
+- **AI Responsibilities**:
+  - Replace placeholders with values from context/metadata
+  - Adapt content for singular/plural (one socio vs multiple)
+  - Add/remove sections based on the specific case
+  - Adjust language and phrasing contextually
+- **Template Purpose**: Serve as "examples/guides" not mechanical templates
+- **Flexibility**: AI can deviate from template when context requires it
+- **Storage**: Templates stored in database with version history
+- **Utility Location**: `/src/lib/templates/`
+
+### PDF Generation Strategy
+- **Manipulation (existing PDFs)**: `pdf-lib`
+  - Insert hash header page at beginning
+  - Merge multiple PDFs
+  - Extract pages
+- **Generation (new PDFs)**: Puppeteer or `@react-pdf/renderer`
+  - Generate acts from AI-produced text
+  - Create cover pages, indices
+- **Hash Header Content**:
+  - Hash anterior declarado
+  - Fecha del acto
+  - Número de acto
+  - Optional: QR code linking to verification
+- **TAD Receipt Extraction**:
+  - Use `pdf-parse` for text extraction
+  - Regex: `/Hash:\s*([a-f0-9]{64})/i`
+  - Fallback: Manual input if extraction fails
+- **Utility Location**: `/src/lib/pdf/`
 
 ### Authentication & Authorization
 - **JWT Payload**: Contains user info, List of Sociedades it belongs and the access for each one.
 - **Middleware**: `to be determined.`
-- **Role Hierarchy**: SuperAdmin > Institution Admin > Regular User
+- **Role Hierarchy**:
+  - **Global**: SuperAdmin (access to all sociedades)
+  - **Per Sociedad**: Owner > Read-Write (RW) > Read-Only (RO)
 
 ### Validation Pattern
 ```typescript
